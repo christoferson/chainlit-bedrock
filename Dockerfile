@@ -10,3 +10,4 @@ COPY --chown=bedrock:bedrock requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
 CMD ["chainlit", "run", "app.py"]
+#CMD ["python", "-m", "chainlit", "run", "app.py", "-h", "--port", "8080"]

@@ -109,6 +109,9 @@ async def setup_agent(settings):
 
 @cl.on_message
 async def main(message: cl.Message):
+
+    print(f"Attachments: {message.elements}")
+
     # Get ConversationChain from the user session
     conversation = cl.user_session.get("llm_chain") 
 
@@ -118,3 +121,7 @@ async def main(message: cl.Message):
     )
     
     await cl.Message(content=res["response"]).send()
+
+@cl.on_chat_end
+def end():
+    print("bye", cl.user_session.get("id"))
