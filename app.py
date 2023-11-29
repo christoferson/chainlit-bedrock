@@ -1,6 +1,7 @@
 import os
 import boto3
 from langchain.prompts import PromptTemplate 
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import ConversationChain
 from langchain.memory import ConversationBufferMemory
 from langchain.llms.bedrock import Bedrock
@@ -9,6 +10,8 @@ from chainlit.input_widget import Select, Slider
 from prompt_template import get_template
 
 AWS_REGION = os.environ["AWS_REGION"]
+
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
 
 @cl.author_rename
 def rename(orig_author: str):
@@ -55,6 +58,29 @@ async def main():
             ),
         ]
     ).send()
+
+    ## Load File
+
+    files = None
+
+    # Wait for the user to upload a file
+    while files == None:
+        files = await cl.AskFileMessage(
+            content="Please upload a text file to begin!",
+            accept=["text/plain"],
+            max_size_mb=20,
+            timeout=180,
+        ).send()
+
+    file = files[0]
+
+    msg = cl.Message(
+        content=f"Processing `{file.name}`...", disable_human_feedback=True
+    )
+    await msg.send()
+
+    ##
+
     await setup_agent(settings)
 
 @cl.on_settings_update
