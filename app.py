@@ -59,7 +59,12 @@ async def main():
         ]
     ).send()
 
-    ## Load File
+    ##
+
+    await setup_agent(settings)
+
+    # Load Initial File
+    ##
 
     files = None
 
@@ -79,9 +84,11 @@ async def main():
     )
     await msg.send()
 
-    ##
+    # Decode the file
+    text = file.content #file.content.decode("utf-8")
 
-    await setup_agent(settings)
+    print(file)
+
 
 @cl.on_settings_update
 async def setup_agent(settings):
@@ -136,7 +143,14 @@ async def setup_agent(settings):
 @cl.on_message
 async def main(message: cl.Message):
 
+    # Check File Attachments
     print(f"Attachments: {message.elements}")
+
+    for element in message.elements:
+        msg = cl.Message(
+            content=f"Processing `{element.name}`...", disable_human_feedback=True
+        )
+        await msg.send()
 
     # Get ConversationChain from the user session
     conversation = cl.user_session.get("llm_chain") 
