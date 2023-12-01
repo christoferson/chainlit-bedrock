@@ -2,14 +2,19 @@ import os
 import boto3
 from langchain.prompts import PromptTemplate 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains import ConversationChain
-from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationChain, ConversationalRetrievalChain
+from langchain.memory import ChatMessageHistory, ConversationBufferMemory
 from langchain.llms.bedrock import Bedrock
+from langchain.embeddings import BedrockEmbeddings
+from langchain.chat_models import BedrockChat
 import chainlit as cl
 from chainlit.input_widget import Select, Slider
 from prompt_template import get_template
+from langchain.vectorstores import Chroma
 
 AWS_REGION = os.environ["AWS_REGION"]
+#AWS_PROFILE = os.environ["AWS_PROFILE"]
+CHROMA_DB_PATH = "vectordb/chromadb/demo.db"
 
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
 
@@ -22,7 +27,11 @@ def rename(orig_author: str):
 
 @cl.on_chat_start
 async def main():
+
+    #boto3.setup_default_session(profile_name=AWS_PROFILE)
+
     bedrock = boto3.client("bedrock", region_name=AWS_REGION)
+    bedrock_runtime = boto3.client("bedrock-runtime", region_name=AWS_REGION)
     
     response = bedrock.list_foundation_models(
         byOutputModality="TEXT"
@@ -63,8 +72,7 @@ async def main():
 
     await setup_agent(settings)
 
-    # Load Initial File
-    ##
+    ###### Load Initial File #######
 
     files = None
 
@@ -72,9 +80,9 @@ async def main():
     while files == None:
         files = await cl.AskFileMessage(
             content="Please upload a text file to begin!",
-            accept=["text/plain"],
-            max_size_mb=20,
-            timeout=180,
+            accept=["text/plain"], #"application/pdf"
+            max_size_mb=10,
+            timeout=90,
         ).send()
 
     file = files[0]
@@ -85,14 +93,50 @@ async def main():
     await msg.send()
 
     # Decode the file
-    text = file.content #file.content.decode("utf-8")
+    text = file.content.decode('utf-8') #file.content.decode("utf-8")
 
-    print(file)
+    # Split the text into chunks
+    texts = text_splitter.split_text(text)
 
+    embedding_model_id : str = "amazon.titan-embed-text-v1"
 
+    embeddings = BedrockEmbeddings(
+        client = bedrock_runtime,
+        model_id = embedding_model_id
+    )
+
+    #vectordb = Chroma(embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
+    vectordb = await cl.make_async(Chroma.from_texts) (
+        texts, embeddings#, metadatas=metadatas
+    )
+    retriever = vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+
+    #similar_docs = retriever.get_relevant_documents("What is the document about?", kwargs={ "k": 2 })
+
+    #print(similar_docs)
+
+    # Set ConversationChain to the user session
+    cl.user_session.set("retriever", retriever)
+
+    print("Setup Chain")
+
+    await setup_agent(settings)
+
+    print("Setup Chain Complete")
+
+    msg = cl.Message(
+        content=f"Processing `{file.name}` complete.", disable_human_feedback=True
+    )
+    await msg.send()
+
+bedrock_model_id = None
 @cl.on_settings_update
 async def setup_agent(settings):
-    global bedrock_model_id
+
+    # Get ConversationChain from the user session
+    retriever = cl.user_session.get("retriever") 
+
+    #global bedrock_model_id
     bedrock_model_id = settings["Model"]
     
     # Instantiate the chain for user session
@@ -125,18 +169,39 @@ async def setup_agent(settings):
 
     prompt = PromptTemplate(
         template=get_template(provider),
-        input_variables=["history", "input"],
+        input_variables=["history", "input"], verbose=True
     )
+
+    if retriever is not None:
+        message_history = ChatMessageHistory()
+
+        conversation = ConversationalRetrievalChain.from_llm(
+            llm = llm, 
+            chain_type = "stuff", 
+            retriever = retriever, 
+            return_source_documents = False,
+            memory = ConversationBufferMemory(
+                human_prefix=human_prefix,
+                ai_prefix=ai_prefix,
+                memory_key="chat_history",
+                #output_key="response",
+                chat_memory=message_history,
+                return_messages=True, verbose=True
+            ),
+            verbose=True)
+        print("Created Chain with Retriever")
+    else:
+        conversation = ConversationChain(
+            prompt=prompt, 
+            llm=llm, 
+            memory=ConversationBufferMemory(
+                human_prefix=human_prefix,
+                ai_prefix=ai_prefix
+            ),
+            verbose=True
+        )
+        print("Created Chain with no Retriever")
     
-    conversation = ConversationChain(
-        prompt=prompt, 
-        llm=llm, 
-        memory=ConversationBufferMemory(
-            human_prefix=human_prefix,
-            ai_prefix=ai_prefix
-        ),
-        verbose=True
-    )
     # Set ConversationChain to the user session
     cl.user_session.set("llm_chain", conversation)
 
@@ -159,8 +224,11 @@ async def main(message: cl.Message):
         message.content, 
         callbacks=[cl.AsyncLangchainCallbackHandler()]
     )
-    
-    await cl.Message(content=res["response"]).send()
+    print(f"***** {res}")
+    if "answer" in res:
+        await cl.Message(content=res["answer"]).send() 
+    elif "response" in res:
+        await cl.Message(content=res["response"]).send()
 
 @cl.on_chat_end
 def end():
