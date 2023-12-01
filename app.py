@@ -33,9 +33,7 @@ async def main():
     bedrock = boto3.client("bedrock", region_name=AWS_REGION)
     bedrock_runtime = boto3.client("bedrock-runtime", region_name=AWS_REGION)
     
-    response = bedrock.list_foundation_models(
-        byOutputModality="TEXT"
-    )
+    response = bedrock.list_foundation_models(byOutputModality="TEXT")
     
     model_ids = []
     for item in response["modelSummaries"]:
@@ -68,9 +66,18 @@ async def main():
         ]
     ).send()
 
-    ##
-
     await setup_agent(settings)
+
+    # Create embeddings
+    embedding_model_id : str = "amazon.titan-embed-text-v1"
+
+    embeddings = BedrockEmbeddings(
+        client = bedrock_runtime,
+        model_id = embedding_model_id
+    )
+
+    #
+    vectordb = Chroma(embedding_function=embeddings) #, persist_directory=CHROMA_DB_PATH)
 
     ###### Load Initial File #######
 
@@ -87,46 +94,40 @@ async def main():
 
     file = files[0]
 
-    msg = cl.Message(
-        content=f"Processing `{file.name}`...", disable_human_feedback=True
-    )
+    msg = cl.Message(content=f"Processing `{file.name}`...", disable_human_feedback=True)
     await msg.send()
 
     # Decode the file
-    text = file.content.decode('utf-8') #file.content.decode("utf-8")
+    text = file.content.decode('utf-8')
 
     # Split the text into chunks
     texts = text_splitter.split_text(text)
 
-    embedding_model_id : str = "amazon.titan-embed-text-v1"
-
-    embeddings = BedrockEmbeddings(
-        client = bedrock_runtime,
-        model_id = embedding_model_id
-    )
+    # Create a metadata for each chunk
+    metadatas = [{"source": f"{i}-pl"} for i in range(len(texts))]
 
     #vectordb = Chroma(embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
-    vectordb = await cl.make_async(Chroma.from_texts) (
-        texts, embeddings#, metadatas=metadatas
+    await cl.make_async(vectordb.add_texts) (
+        texts, metadatas=metadatas
     )
-    retriever = vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+    #vectordb = await cl.make_async(Chroma.from_texts) (
+    #    texts, embeddings, 
+    #    metadatas=metadatas
+    #)
+    #retriever = vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 10})
+    retriever = vectordb.as_retriever(search_type="similarity")
 
     #similar_docs = retriever.get_relevant_documents("What is the document about?", kwargs={ "k": 2 })
 
     #print(similar_docs)
 
-    # Set ConversationChain to the user session
+    # Set Retriever to the user session
+    cl.user_session.set("vectordb", vectordb)
     cl.user_session.set("retriever", retriever)
-
-    print("Setup Chain")
 
     await setup_agent(settings)
 
-    print("Setup Chain Complete")
-
-    msg = cl.Message(
-        content=f"Processing `{file.name}` complete.", disable_human_feedback=True
-    )
+    msg = cl.Message(content=f"Processing `{file.name}` complete.", disable_human_feedback=True)
     await msg.send()
 
 bedrock_model_id = None
