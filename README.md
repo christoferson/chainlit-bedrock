@@ -35,3 +35,7 @@ copilot app delete
 - [chainlit-github](https://github.com/Chainlit/chainlit)
 - [langchain-github](https://github.com/langchain-ai/langchain)
 - [chainlit-docs](https://docs.chainlit.io/get-started/overview)
+- https://www.kaggle.com/
+- https://archive.ics.uci.edu/
+- https://en.wikipedia.org/wiki/List_of_datasets_for_machine-learning_research
+- https://registry.opendata.aws/
