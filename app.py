@@ -5,12 +5,12 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import ConversationChain, ConversationalRetrievalChain
 from langchain.memory import ChatMessageHistory, ConversationBufferMemory
 from langchain.llms.bedrock import Bedrock
-from langchain.embeddings import BedrockEmbeddings
+from langchain_community.embeddings import BedrockEmbeddings
 from langchain.chat_models import BedrockChat
 import chainlit as cl
 from chainlit.input_widget import Select, Slider
 from prompt_template import get_template
-from langchain.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma
 
 AWS_REGION = os.environ["AWS_REGION"]
 #AWS_PROFILE = os.environ["AWS_PROFILE"]
